@@ -14,6 +14,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => {
+// Bind to 0.0.0.0 so the server is reachable from localhost/WSL/VM
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Driverpool24 läuft auf Port ${PORT}`);
 });
