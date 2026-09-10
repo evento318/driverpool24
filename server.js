@@ -36,6 +36,25 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+function authenticate(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Anmeldung erforderlich' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Sitzung abgelaufen. Bitte erneut anmelden.' });
+  }
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Keine Berechtigung' });
+    next();
+  };
+}
+
 // ---------- AUTH ----------
 app.post('/api/login', async (req, res) => {
   try {
@@ -54,10 +73,11 @@ app.post('/api/login', async (req, res) => {
     } else {
       const ok = await bcrypt.compare(password, user.password);
       if (!ok) return res.status(401).json({ error: 'Falsches Passwort' });
+      if (role && user.role !== role) return res.status(403).json({ error: 'Dieses Konto gehört zu einem anderen Bereich.' });
     }
 
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ success: true, token, user: { id: user.id, email: user.email, role: user.role } });
+    res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Login fehlgeschlagen' });
@@ -70,10 +90,16 @@ app.get('/api/jobs', async (req, res) => {
   res.json(jobs);
 });
 
-app.post('/api/jobs', async (req, res) => {
+app.post('/api/jobs', authenticate, requireRole('firma'), async (req, res) => {
   try {
-    const { firma_id, titel, beschreibung, preis } = req.body;
-    const job = await createJob({ firma_id, titel, beschreibung, preis });
+    const { titel, beschreibung, preis } = req.body;
+    if (!titel || !titel.trim()) return res.status(400).json({ error: 'Bitte einen Jobtitel eingeben.' });
+    const job = await createJob({
+      firma_id: req.user.id,
+      titel: titel.trim(),
+      beschreibung: beschreibung?.trim() || '',
+      preis: preis === '' || preis == null ? null : Number(preis)
+    });
     res.json({ success: true, job });
   } catch (err) {
     console.error(err);
@@ -88,10 +114,9 @@ app.get('/api/jobs/:id', async (req, res) => {
 });
 
 // ---------- APPLICATIONS ----------
-app.post('/api/jobs/:id/apply', async (req, res) => {
+app.post('/api/jobs/:id/apply', authenticate, requireRole('fahrer'), async (req, res) => {
   try {
-    const { fahrer_id } = req.body;
-    const app_ = await createApplication({ job_id: req.params.id, fahrer_id });
+    const app_ = await createApplication({ job_id: req.params.id, fahrer_id: req.user.id });
     res.json({ success: true, application: app_ });
   } catch (err) {
     console.error(err);
@@ -99,17 +124,21 @@ app.post('/api/jobs/:id/apply', async (req, res) => {
   }
 });
 
-app.get('/api/jobs/:id/applications', async (req, res) => {
+app.get('/api/jobs/:id/applications', authenticate, requireRole('firma'), async (req, res) => {
+  const job = await getJobById(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job nicht gefunden' });
+  if (job.firma_id !== req.user.id) return res.status(403).json({ error: 'Keine Berechtigung für diesen Job.' });
   const apps = await getApplicationsByJobId(req.params.id);
   res.json(apps);
 });
 
 // ---------- HIRE & INVOICE ----------
-app.post('/api/jobs/:id/hire', async (req, res) => {
+app.post('/api/jobs/:id/hire', authenticate, requireRole('firma'), async (req, res) => {
   try {
     const { fahrer_id, fahrerlohn = 250, gebuehr = 150 } = req.body;
     const job = await getJobById(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job nicht gefunden' });
+    if (job.firma_id !== req.user.id) return res.status(403).json({ error: 'Keine Berechtigung für diesen Job.' });
 
     const invoice = await createInvoice({
       job_id: job.id,
@@ -128,19 +157,19 @@ app.post('/api/jobs/:id/hire', async (req, res) => {
 });
 
 // ---------- INVOICES ----------
-app.get('/api/invoices', async (req, res) => {
+app.get('/api/invoices', authenticate, async (req, res) => {
   const invoices = await getInvoices();
   res.json(invoices);
 });
 
-app.get('/api/invoices/:id', async (req, res) => {
+app.get('/api/invoices/:id', authenticate, async (req, res) => {
   const invoice = await getInvoiceById(req.params.id);
   if (!invoice) return res.status(404).json({ error: 'Rechnung nicht gefunden' });
   res.json(invoice);
 });
 
 // ---------- ADMIN ----------
-app.get('/api/admin/stats', async (req, res) => {
+app.get('/api/admin/stats', authenticate, requireRole('admin'), async (req, res) => {
   const stats = await getAdminStats();
   res.json(stats);
 });
