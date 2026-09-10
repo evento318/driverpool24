@@ -58,7 +58,6 @@ export async function initDatabase() {
     console.log('✅ Datenbank initialisiert');
 }
 
-// -------- USER --------
 export async function createUser({ name, email, password, role }) {
     const result = await db.run(
         'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
@@ -71,7 +70,6 @@ export async function getUserByEmail(email) {
     return await db.get('SELECT * FROM users WHERE email = ?', [email]);
 }
 
-// -------- JOBS --------
 export async function createJob({ firma_id, titel, beschreibung, preis }) {
     const result = await db.run(
         'INSERT INTO jobs (firma_id, titel, beschreibung, preis) VALUES (?, ?, ?, ?)',
@@ -92,8 +90,13 @@ export async function updateJobStatus(id, status) {
     return await db.run('UPDATE jobs SET status = ? WHERE id = ?', [status, id]);
 }
 
-// -------- APPLICATIONS --------
 export async function createApplication({ job_id, fahrer_id }) {
+    const existing = await db.get(
+        'SELECT * FROM applications WHERE job_id = ? AND fahrer_id = ?',
+        [job_id, fahrer_id]
+    );
+    if (existing) return existing;
+
     const result = await db.run(
         'INSERT INTO applications (job_id, fahrer_id) VALUES (?, ?)',
         [job_id, fahrer_id]
@@ -106,7 +109,8 @@ export async function getApplicationsByJobId(job_id) {
         `SELECT a.*, u.name AS fahrer_name, u.email AS fahrer_email
          FROM applications a
          JOIN users u ON a.fahrer_id = u.id
-         WHERE a.job_id = ?`,
+         WHERE a.job_id = ?
+         ORDER BY a.created_at ASC`,
         [job_id]
     );
 }
@@ -120,11 +124,44 @@ export async function getApplicationByJobAndEmail(job_id, email) {
     );
 }
 
+export async function getApplicationById(id) {
+    return await db.get('SELECT * FROM applications WHERE id = ?', [id]);
+}
+
 export async function updateApplicationStatus(id, status) {
     return await db.run('UPDATE applications SET status = ? WHERE id = ?', [status, id]);
 }
 
-// -------- INVOICES --------
+export async function selectDriverForJob({ job_id, fahrer_id }) {
+    const application = await db.get(
+        'SELECT * FROM applications WHERE job_id = ? AND fahrer_id = ?',
+        [job_id, fahrer_id]
+    );
+    if (!application) return null;
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+        await db.run(
+            `UPDATE applications
+             SET status = CASE WHEN fahrer_id = ? THEN 'angenommen' ELSE 'abgelehnt' END
+             WHERE job_id = ?`,
+            [fahrer_id, job_id]
+        );
+        await db.run('UPDATE jobs SET status = ? WHERE id = ?', ['vergeben', job_id]);
+        await db.run('COMMIT');
+    } catch (err) {
+        await db.run('ROLLBACK');
+        throw err;
+    }
+
+    return await db.get(
+        `SELECT a.*, u.name AS fahrer_name, u.email AS fahrer_email
+         FROM applications a JOIN users u ON a.fahrer_id = u.id
+         WHERE a.job_id = ? AND a.fahrer_id = ?`,
+        [job_id, fahrer_id]
+    );
+}
+
 export async function createInvoice({ job_id, firma_id, fahrer_id, fahrerlohn, gebuehr }) {
     const gesamt = fahrerlohn + gebuehr;
     const result = await db.run(
@@ -143,7 +180,6 @@ export async function getInvoiceById(id) {
     return await db.get('SELECT * FROM invoices WHERE id = ?', [id]);
 }
 
-// -------- ADMIN --------
 export async function getAdminStats() {
     const users = await db.get('SELECT COUNT(*) AS c FROM users');
     const jobs = await db.get('SELECT COUNT(*) AS c FROM jobs');
