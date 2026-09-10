@@ -48,12 +48,26 @@ export async function initDatabase() {
             fahrerlohn REAL NOT NULL,
             gebuehr REAL NOT NULL,
             gesamt REAL NOT NULL,
+            zahlungsstatus TEXT DEFAULT 'ausstehend',
+            auszahlungsstatus TEXT DEFAULT 'gesichert',
+            bezahlt_am DATETIME,
+            auszahlung_freigegeben_am DATETIME,
+            ausgezahlt_am DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (job_id) REFERENCES jobs(id),
             FOREIGN KEY (firma_id) REFERENCES users(id),
             FOREIGN KEY (fahrer_id) REFERENCES users(id)
         );
     `);
+
+    // Bestehende Datenbanken sicher auf die neuen Zahlungsfelder erweitern.
+    const invoiceColumns = await db.all('PRAGMA table_info(invoices)');
+    const columnNames = new Set(invoiceColumns.map(c => c.name));
+    if (!columnNames.has('zahlungsstatus')) await db.exec("ALTER TABLE invoices ADD COLUMN zahlungsstatus TEXT DEFAULT 'ausstehend'");
+    if (!columnNames.has('auszahlungsstatus')) await db.exec("ALTER TABLE invoices ADD COLUMN auszahlungsstatus TEXT DEFAULT 'gesichert'");
+    if (!columnNames.has('bezahlt_am')) await db.exec('ALTER TABLE invoices ADD COLUMN bezahlt_am DATETIME');
+    if (!columnNames.has('auszahlung_freigegeben_am')) await db.exec('ALTER TABLE invoices ADD COLUMN auszahlung_freigegeben_am DATETIME');
+    if (!columnNames.has('ausgezahlt_am')) await db.exec('ALTER TABLE invoices ADD COLUMN ausgezahlt_am DATETIME');
 
     console.log('✅ Datenbank initialisiert');
 }
@@ -147,7 +161,8 @@ export async function selectDriverForJob({ job_id, fahrer_id }) {
              WHERE job_id = ?`,
             [fahrer_id, job_id]
         );
-        await db.run('UPDATE jobs SET status = ? WHERE id = ?', ['vergeben', job_id]);
+        // Der Auftrag ist reserviert, bis die Vorauszahlung eingegangen ist.
+        await db.run('UPDATE jobs SET status = ? WHERE id = ?', ['reserviert', job_id]);
         await db.run('COMMIT');
     } catch (err) {
         await db.run('ROLLBACK');
@@ -169,7 +184,36 @@ export async function createInvoice({ job_id, firma_id, fahrer_id, fahrerlohn, g
          VALUES (?, ?, ?, ?, ?, ?)`,
         [job_id, firma_id, fahrer_id, fahrerlohn, gebuehr, gesamt]
     );
-    return { id: result.lastID, job_id, firma_id, fahrer_id, fahrerlohn, gebuehr, gesamt };
+    return { id: result.lastID, job_id, firma_id, fahrer_id, fahrerlohn, gebuehr, gesamt, zahlungsstatus: 'ausstehend', auszahlungsstatus: 'gesichert' };
+}
+
+export async function getInvoiceByJobId(job_id) {
+    return await db.get('SELECT * FROM invoices WHERE job_id = ? ORDER BY id DESC LIMIT 1', [job_id]);
+}
+
+export async function markInvoicePaid(id) {
+    return await db.run(
+        `UPDATE invoices SET zahlungsstatus = 'bezahlt', bezahlt_am = CURRENT_TIMESTAMP WHERE id = ?`,
+        [id]
+    );
+}
+
+export async function releaseDriverPayment(id) {
+    return await db.run(
+        `UPDATE invoices
+         SET auszahlungsstatus = 'auszahlung_freigegeben', auszahlung_freigegeben_am = CURRENT_TIMESTAMP
+         WHERE id = ? AND zahlungsstatus = 'bezahlt'`,
+        [id]
+    );
+}
+
+export async function markDriverPaid(id) {
+    return await db.run(
+        `UPDATE invoices
+         SET auszahlungsstatus = 'ausgezahlt', ausgezahlt_am = CURRENT_TIMESTAMP
+         WHERE id = ? AND auszahlungsstatus = 'auszahlung_freigegeben'`,
+        [id]
+    );
 }
 
 export async function getInvoices() {
