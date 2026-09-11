@@ -1,0 +1,33 @@
+name: Apply DriverPool24 auth fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-auth:
+    runs-on: ubuntu-latest
+    if: github.event.head_commit.message != 'Apply DriverPool24 auth patch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply patch
+        run: node patch-server.js
+      - name: Commit patched server
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No changes needed."
+          else
+            git add server.js
+            git commit -m "Apply DriverPool24 auth patch"
+            git push
+          fi
