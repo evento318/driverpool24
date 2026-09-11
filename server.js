@@ -25,7 +25,13 @@ import {
   createDriverDocument,
   getDriverDocuments,
   getDriverDocumentById,
-  verifyDriverDocument
+  verifyDriverDocument,
+  createSosRequest,
+  getOpenSosRequestsForDrivers,
+  createSosOptin,
+  getSosOptinsForCompany,
+  getSosRequestForUser,
+  selectSosDriver
 } from './database.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -160,6 +166,76 @@ app.post('/api/jobs/:id/select-driver', authenticate, requireRole('firma'), asyn
     const selected = await selectDriverForJob({ job_id: job.id, fahrer_id: fahrerId });
     res.json({ success: true, message: 'Fahrer wurde ausgewählt. Der nächste Schritt ist die Zahlung/Reservierung.', job: { id: job.id, status: 'reserviert' }, application: selected });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Fahrer konnte nicht ausgewählt werden' }); }
+});
+
+// SOS: Firma eröffnet einen echten SOS-Auftrag. Der Firmenpreis bleibt serverseitig und wird nie an Fahrer ausgeliefert.
+app.post('/api/jobs/:id/sos', authenticate, requireRole('firma'), async (req, res) => {
+  try {
+    const job = await getJobById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job nicht gefunden.' });
+    if (Number(job.firma_id) !== Number(req.user.id)) return res.status(403).json({ error: 'Keine Berechtigung für diesen Job.' });
+    if (job.status !== 'offen') return res.status(409).json({ error: 'Dieser Auftrag ist nicht mehr offen.' });
+    const sos = await createSosRequest({ job_id: job.id, firma_id: req.user.id, company_price_per_day: 500, driver_bonus: 50 });
+    res.json({ success: true, message: 'SOS-Fahrersuche wurde gestartet.', sos: { id: sos.id, job_id: sos.job_id, status: sos.status, company_price_per_day: sos.company_price_per_day } });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'SOS-Fahrersuche konnte nicht gestartet werden.' }); }
+});
+
+// SOS: Fahrer sieht nur Einsatzdaten und seinen Bonus. Der Firmenpreis wird niemals zurückgegeben.
+app.get('/api/driver/sos', authenticate, requireRole('fahrer'), async (req, res) => {
+  try {
+    const requests = await getOpenSosRequestsForDrivers();
+    const result = requests.map(item => ({
+      id: item.id,
+      job_id: item.job_id,
+      titel: item.titel,
+      beschreibung: item.beschreibung,
+      driver_bonus: item.driver_bonus,
+      status: item.status,
+      created_at: item.created_at
+    }));
+    res.json(result);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'SOS-Einsätze konnten nicht geladen werden.' }); }
+});
+
+app.post('/api/driver/sos/:id/opt-in', authenticate, requireRole('fahrer'), async (req, res) => {
+  try {
+    const sos = await getSosRequestForUser(req.params.id);
+    if (!sos || sos.status !== 'offen') return res.status(404).json({ error: 'Dieser SOS-Einsatz ist nicht mehr verfügbar.' });
+    const job = await getJobById(sos.job_id);
+    if (!job) return res.status(404).json({ error: 'Auftrag nicht gefunden.' });
+    const basePay = Number(req.body.driver_base_pay);
+    if (![200, 230].includes(basePay)) return res.status(400).json({ error: 'Für diesen SOS-Einsatz konnte kein gültiger Fahrersatzlohn ermittelt werden.' });
+    const optin = await createSosOptin({ sos_request_id: sos.id, fahrer_id: req.user.id, driver_payout_per_day: basePay + Number(sos.driver_bonus) });
+    res.json({ success: true, message: 'Du bist für den SOS-Einsatz eingetragen.', optin: { id: optin.id, status: optin.status, driver_payout_per_day: optin.driver_payout_per_day } });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'SOS-Eintragung fehlgeschlagen.' }); }
+});
+
+app.get('/api/jobs/:id/sos', authenticate, requireRole('firma'), async (req, res) => {
+  try {
+    const job = await getJobById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job nicht gefunden.' });
+    if (Number(job.firma_id) !== Number(req.user.id)) return res.status(403).json({ error: 'Keine Berechtigung.' });
+    const sos = await getSosRequestForUser(req.query.sos_id);
+    if (!sos || Number(sos.job_id) !== Number(job.id)) return res.status(404).json({ error: 'SOS-Anfrage nicht gefunden.' });
+    const optins = await getSosOptinsForCompany(sos.id);
+    res.json({ sos: { id: sos.id, job_id: sos.job_id, status: sos.status, company_price_per_day: sos.company_price_per_day, driver_bonus: sos.driver_bonus, selected_fahrer_id: sos.selected_fahrer_id }, optins });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'SOS-Bewerber konnten nicht geladen werden.' }); }
+});
+
+app.post('/api/jobs/:id/sos/select-driver', authenticate, requireRole('firma'), async (req, res) => {
+  try {
+    const fahrerId = Number(req.body.fahrer_id);
+    const sosId = Number(req.body.sos_id);
+    if (!Number.isInteger(fahrerId) || !Number.isInteger(sosId)) return res.status(400).json({ error: 'Ungültige SOS-Auswahl.' });
+    const job = await getJobById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job nicht gefunden.' });
+    if (Number(job.firma_id) !== Number(req.user.id)) return res.status(403).json({ error: 'Keine Berechtigung.' });
+    const sos = await getSosRequestForUser(sosId);
+    if (!sos || Number(sos.job_id) !== Number(job.id) || Number(sos.firma_id) !== Number(req.user.id)) return res.status(404).json({ error: 'SOS-Anfrage nicht gefunden.' });
+    const selected = await selectSosDriver({ sos_request_id: sos.id, fahrer_id: fahrerId });
+    if (!selected) return res.status(409).json({ error: 'Dieser Fahrer hat sich nicht für diesen SOS-Einsatz eingetragen oder der Einsatz wurde bereits vergeben.' });
+    res.json({ success: true, message: 'SOS-Fahrer wurde ausgewählt.', selected: { fahrer_id: selected.fahrer_id, fahrer_name: selected.fahrer_name, driver_payout_per_day: selected.driver_payout_per_day, status: selected.status }, company_price_per_day: sos.company_price_per_day });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'SOS-Fahrer konnte nicht ausgewählt werden.' }); }
 });
 
 app.post('/api/jobs/:id/hire', authenticate, requireRole('firma'), async (req, res) => {
