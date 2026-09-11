@@ -222,6 +222,33 @@ export async function getSosOptinsForCompany(sos_request_id) {
 
 export async function getSosRequestForUser(id) { return await db.get('SELECT * FROM sos_requests WHERE id = ?', [id]); }
 
+export async function getDriverSosQualification(fahrer_id) {
+    const required = await db.all(`
+        SELECT document_type, expires_at, verification_status
+        FROM driver_documents
+        WHERE fahrer_id = ?
+          AND document_type IN ('fuehrerschein','fahrerkarte')
+          AND verification_status = 'geprueft'
+          AND (expires_at IS NULL OR date(expires_at) >= date('now'))
+    `, [fahrer_id]);
+    const hasLicense = required.some(d => d.document_type === 'fuehrerschein');
+    const hasDriverCard = required.some(d => d.document_type === 'fahrerkarte');
+    const qualification = await db.get(`
+        SELECT COUNT(*) AS c
+        FROM driver_qualifications q
+        WHERE q.fahrer_id = ?
+          AND q.status = 'geprueft'
+          AND (q.expires_at IS NULL OR date(q.expires_at) >= date('now'))
+    `, [fahrer_id]);
+    const hasQualification = Number(qualification.c) > 0;
+    return {
+        qualified: hasLicense && hasDriverCard,
+        hasLicense,
+        hasDriverCard,
+        hasQualification
+    };
+}
+
 export async function selectSosDriver({ sos_request_id, fahrer_id }) {
     const request = await db.get(`SELECT * FROM sos_requests WHERE id = ? AND status = 'offen'`, [sos_request_id]);
     if (!request) return null;
