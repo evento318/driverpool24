@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'patch-communication.js'
+      - '.github/workflows/apply-communication.yml'
     branches: [main]
 
 permissions:
