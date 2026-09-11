@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import crypto from 'crypto';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
-import { initDatabase, createUser, getUserByEmail, createJob, getJobs, getJobById, createApplication, getApplicationsByJobId, getApplicationById, selectDriverForJob, createInvoice, getInvoices, getInvoiceById, getAdminStats, createDriverDocument, getDriverDocuments, getDriverDocumentById, verifyDriverDocument, createSosRequest, getOpenSosRequestsForDrivers, createSosOptin, getSosOptinsForCompany, getSosRequestForUser, getDriverSosQualification, addDriverRating, getDriverRatingSummary, selectSosDriver, getDriverBasePay } from './database.js';
+import { initDatabase, createUser, getUserByEmail, createJob, getJobs, getJobById, createApplication, getApplicationsByJobId, getApplicationById, selectDriverForJob, createInvoice, getInvoices, getInvoiceById, getAdminStats, createDriverDocument, getDriverDocuments, getDriverDocumentById, verifyDriverDocument, createSosRequest, getOpenSosRequestsForDrivers, createSosOptin, getSosOptinsForCompany, getSosRequestForUser, getDriverSosQualification, addDriverRating, getDriverRatingSummary, selectSosDriver, getDriverBasePay, getUserLanguage, setUserLanguage, createConversation, userIsConversationParticipant, getConversationsForUser, getConversationMessages, createMessage } from './database.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,7 +27,24 @@ async function validateDocumentFile(file){const handle=await fs.open(file.path,'
 
 app.post('/api/login',async(req,res)=>{try{const{email,password,role}=req.body;const normalizedEmail=String(email||'').trim().toLowerCase();if(!normalizedEmail||!password)return res.status(400).json({error:'Bitte E-Mail und Passwort eingeben.'});const user=await getUserByEmail(normalizedEmail);if(!user)return res.status(401).json({error:'Kein Konto mit dieser E-Mail gefunden. Bitte zuerst ein Konto erstellen.'});const ok=await bcrypt.compare(String(password),user.password);if(!ok)return res.status(401).json({error:'E-Mail oder Passwort ist falsch.'});if(role&&user.role!==role)return res.status(403).json({error:'Dieses Konto gehört zu einem anderen Bereich.'});const token=jwt.sign({id:user.id,role:user.role},JWT_SECRET,{expiresIn:'7d'});res.json({success:true,token,user:{id:user.id,name:user.name,email:user.email,role:user.role}});}catch(err){console.error(err);res.status(500).json({error:'Login fehlgeschlagen. Bitte später erneut versuchen.'});}});
 app.post('/api/register',async(req,res)=>{try{const{name,email,password,role}=req.body;const normalizedEmail=String(email||'').trim().toLowerCase();const cleanName=String(name||'').trim();if(!cleanName||cleanName.length<2)return res.status(400).json({error:'Bitte einen gültigen Namen eingeben.'});if(!/^\S+@\S+\.\S+$/.test(normalizedEmail))return res.status(400).json({error:'Bitte eine gültige E-Mail-Adresse eingeben.'});if(String(password||'').length<8)return res.status(400).json({error:'Das Passwort muss mindestens 8 Zeichen haben.'});if(!['fahrer','firma'].includes(role))return res.status(400).json({error:'Ungültige Kontoart.'});const existing=await getUserByEmail(normalizedEmail);if(existing)return res.status(409).json({error:'Für diese E-Mail existiert bereits ein Konto. Bitte anmelden.'});const hash=await bcrypt.hash(String(password),10);const user=await createUser({name:cleanName,email:normalizedEmail,password:hash,role});res.status(201).json({success:true,message:'Konto wurde erstellt. Du kannst dich jetzt anmelden.',user});}catch(err){console.error(err);res.status(500).json({error:'Konto konnte nicht erstellt werden.'});}});
-app.get('/api/me',authenticate,async(req,res)=>{try{const{getUserById}=await import('./database.js');const user=await getUserById(req.user.id);if(!user)return res.status(401).json({error:'Konto nicht gefunden.'});res.json({authenticated:true,user});}catch(err){console.error(err);res.status(500).json({error:'Sitzung konnte nicht geprüft werden.'});}});app.get('/api/jobs',async(req,res)=>res.json(await getJobs()));
+app.get('/api/me',authenticate,async(req,res)=>{try{const{getUserById}=await import('./database.js');const user=await getUserById(req.user.id);if(!user)return res.status(401).json({error:'Konto nicht gefunden.'});res.json({authenticated:true,user});}catch(err){console.error(err);res.status(500).json({error:'Sitzung konnte nicht geprüft werden.'});}});
+const SUPPORTED_LANGUAGES = new Set(['de','fr','nl','es','en','pl','hu','bg','cs','ru']);
+async function translateText(text,targetLanguage){
+  const target=String(targetLanguage||'de').toLowerCase();
+  if(!SUPPORTED_LANGUAGES.has(target)) throw new Error('Nicht unterstützte Zielsprache.');
+  const apiKey=process.env.DEEPL_API_KEY;
+  if(!apiKey) return {text,provider:null,status:'provider_not_configured'};
+  const endpoint=process.env.DEEPL_API_URL || 'https://api-free.deepl.com/v2/translate';
+  const body=new URLSearchParams({text:String(text),target_lang:target.toUpperCase()});
+  const response=await fetch(endpoint,{method:'POST',headers:{Authorization:'DeepL-Auth-Key '+apiKey,'Content-Type':'application/x-www-form-urlencoded'},body});
+  if(!response.ok) throw new Error('Übersetzungsdienst nicht erreichbar.');
+  const data=await response.json();
+  const item=data.translations?.[0];
+  if(!item?.text) throw new Error('Übersetzung konnte nicht erstellt werden.');
+  return {text:item.text,provider:'deepl',status:'translated',sourceLanguage:(item.detected_source_language||'').toLowerCase()};
+}
+
+app.get('/api/jobs',async(req,res)=>res.json(await getJobs()));
 app.post('/api/jobs',authenticate,requireRole('firma'),async(req,res)=>{try{const{titel,beschreibung,preis,vehicle_type}=req.body;if(!titel||!titel.trim())return res.status(400).json({error:'Bitte einen Jobtitel eingeben.'});const job=await createJob({firma_id:req.user.id,titel:titel.trim(),beschreibung:beschreibung?.trim()||'',preis:preis===''||preis==null?null:Number(preis),vehicle_type:vehicle_type||null});res.json({success:true,job});}catch(err){console.error(err);res.status(500).json({error:'Job konnte nicht erstellt werden'});}});
 app.get('/api/jobs/:id',async(req,res)=>{const job=await getJobById(req.params.id);if(!job)return res.status(404).json({error:'Job nicht gefunden'});res.json(job);});
 app.post('/api/jobs/:id/apply',authenticate,requireRole('fahrer'),async(req,res)=>{try{const job=await getJobById(req.params.id);if(!job)return res.status(404).json({error:'Job nicht gefunden'});if(job.status!=='offen')return res.status(409).json({error:'Dieser Job ist nicht mehr offen.'});const application=await createApplication({job_id:job.id,fahrer_id:req.user.id});res.json({success:true,application});}catch(err){console.error(err);res.status(500).json({error:'Bewerbung fehlgeschlagen'});}});
