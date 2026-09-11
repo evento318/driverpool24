@@ -92,6 +92,33 @@ export async function initDatabase() {
             FOREIGN KEY (fahrer_id) REFERENCES users(id),
             FOREIGN KEY (document_id) REFERENCES driver_documents(id)
         );
+
+        CREATE TABLE IF NOT EXISTS sos_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL,
+            firma_id INTEGER NOT NULL,
+            company_price_per_day REAL NOT NULL DEFAULT 500,
+            driver_bonus REAL NOT NULL DEFAULT 50,
+            status TEXT NOT NULL DEFAULT 'offen',
+            selected_fahrer_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            closed_at DATETIME,
+            FOREIGN KEY (job_id) REFERENCES jobs(id),
+            FOREIGN KEY (firma_id) REFERENCES users(id),
+            FOREIGN KEY (selected_fahrer_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS sos_optins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sos_request_id INTEGER NOT NULL,
+            fahrer_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'interessiert',
+            driver_payout_per_day REAL NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(sos_request_id, fahrer_id),
+            FOREIGN KEY (sos_request_id) REFERENCES sos_requests(id),
+            FOREIGN KEY (fahrer_id) REFERENCES users(id)
+        );
     `);
 
     const invoiceColumns = await db.all('PRAGMA table_info(invoices)');
@@ -171,11 +198,50 @@ export async function getDriverDocuments(fahrer_id) { return await db.all('SELEC
 export async function getDriverDocumentById(id) { return await db.get('SELECT * FROM driver_documents WHERE id = ?', [id]); }
 export async function verifyDriverDocument(id, admin_id, status, note = '') { return await db.run(`UPDATE driver_documents SET verification_status = ?, verification_note = ?, verified_at = CURRENT_TIMESTAMP, verified_by = ? WHERE id = ?`, [status, note, admin_id, id]); }
 
+export async function createSosRequest({ job_id, firma_id, company_price_per_day = 500, driver_bonus = 50 }) {
+    const existing = await db.get(`SELECT * FROM sos_requests WHERE job_id = ? AND status = 'offen'`, [job_id]);
+    if (existing) return existing;
+    const result = await db.run(`INSERT INTO sos_requests (job_id, firma_id, company_price_per_day, driver_bonus) VALUES (?, ?, ?, ?)`, [job_id, firma_id, company_price_per_day, driver_bonus]);
+    return await db.get('SELECT * FROM sos_requests WHERE id = ?', [result.lastID]);
+}
+
+export async function getOpenSosRequestsForDrivers() {
+    return await db.all(`SELECT s.id, s.job_id, j.titel, j.beschreibung, s.driver_bonus, s.status, s.created_at FROM sos_requests s JOIN jobs j ON j.id = s.job_id WHERE s.status = 'offen' ORDER BY s.created_at DESC`);
+}
+
+export async function createSosOptin({ sos_request_id, fahrer_id, driver_payout_per_day }) {
+    const existing = await db.get('SELECT * FROM sos_optins WHERE sos_request_id = ? AND fahrer_id = ?', [sos_request_id, fahrer_id]);
+    if (existing) return existing;
+    const result = await db.run(`INSERT INTO sos_optins (sos_request_id, fahrer_id, driver_payout_per_day) VALUES (?, ?, ?)`, [sos_request_id, fahrer_id, driver_payout_per_day]);
+    return await db.get('SELECT id,sos_request_id,fahrer_id,status,driver_payout_per_day,created_at FROM sos_optins WHERE id = ?', [result.lastID]);
+}
+
+export async function getSosOptinsForCompany(sos_request_id) {
+    return await db.all(`SELECT o.id,o.sos_request_id,o.fahrer_id,o.status,o.driver_payout_per_day,o.created_at,u.name AS fahrer_name FROM sos_optins o JOIN users u ON u.id = o.fahrer_id WHERE o.sos_request_id = ? ORDER BY o.created_at ASC`, [sos_request_id]);
+}
+
+export async function getSosRequestForUser(id) { return await db.get('SELECT * FROM sos_requests WHERE id = ?', [id]); }
+
+export async function selectSosDriver({ sos_request_id, fahrer_id }) {
+    const request = await db.get(`SELECT * FROM sos_requests WHERE id = ? AND status = 'offen'`, [sos_request_id]);
+    if (!request) return null;
+    const optin = await db.get(`SELECT * FROM sos_optins WHERE sos_request_id = ? AND fahrer_id = ? AND status = 'interessiert'`, [sos_request_id, fahrer_id]);
+    if (!optin) return null;
+    await db.run('BEGIN TRANSACTION');
+    try {
+        await db.run(`UPDATE sos_optins SET status = CASE WHEN fahrer_id = ? THEN 'ausgewaehlt' ELSE 'nicht_ausgewaehlt' END WHERE sos_request_id = ?`, [fahrer_id, sos_request_id]);
+        await db.run(`UPDATE sos_requests SET status = 'reserviert', selected_fahrer_id = ? WHERE id = ?`, [fahrer_id, sos_request_id]);
+        await db.run('COMMIT');
+    } catch (err) { await db.run('ROLLBACK'); throw err; }
+    return await db.get(`SELECT o.id,o.sos_request_id,o.fahrer_id,o.status,o.driver_payout_per_day,o.created_at,u.name AS fahrer_name FROM sos_optins o JOIN users u ON u.id = o.fahrer_id WHERE o.sos_request_id = ? AND o.fahrer_id = ?`, [sos_request_id, fahrer_id]);
+}
+
 export async function getAdminStats() {
     const users = await db.get('SELECT COUNT(*) AS c FROM users');
     const jobs = await db.get('SELECT COUNT(*) AS c FROM jobs');
     const invoices = await db.get('SELECT COUNT(*) AS c FROM invoices');
     const umsatz = await db.get('SELECT SUM(gebuehr) AS sum FROM invoices');
     const documents = await db.get("SELECT COUNT(*) AS c FROM driver_documents WHERE verification_status = 'ausstehend'");
-    return { userCount: users.c, jobCount: jobs.c, invoiceCount: invoices.c, umsatz: umsatz.sum || 0, pendingDocuments: documents.c };
+    const sos = await db.get("SELECT COUNT(*) AS c FROM sos_requests WHERE status = 'offen'");
+    return { userCount: users.c, jobCount: jobs.c, invoiceCount: invoices.c, umsatz: umsatz.sum || 0, pendingDocuments: documents.c, openSosRequests: sos.c };
 }
