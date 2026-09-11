@@ -25,8 +25,7 @@ import {
   createDriverDocument,
   getDriverDocuments,
   getDriverDocumentById,
-  verifyDriverDocument,
-  deleteDriverDocument
+  verifyDriverDocument
 } from './database.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,19 +82,12 @@ const upload = multer({
 async function validateDocumentFile(file) {
   const handle = await fs.open(file.path, 'r');
   const buffer = Buffer.alloc(12);
-  try {
-    await handle.read(buffer, 0, 12, 0);
-  } finally {
-    await handle.close();
-  }
+  try { await handle.read(buffer, 0, 12, 0); } finally { await handle.close(); }
   const isPdf = buffer.subarray(0, 5).toString() === '%PDF-';
   const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
   const isPng = buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
   const isWebp = buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP';
-  return (isPdf && file.mimetype === 'application/pdf') ||
-         (isJpeg && file.mimetype === 'image/jpeg') ||
-         (isPng && file.mimetype === 'image/png') ||
-         (isWebp && file.mimetype === 'image/webp');
+  return (isPdf && file.mimetype === 'application/pdf') || (isJpeg && file.mimetype === 'image/jpeg') || (isPng && file.mimetype === 'image/png') || (isWebp && file.mimetype === 'image/webp');
 }
 
 app.post('/api/login', async (req, res) => {
@@ -125,17 +117,9 @@ app.post('/api/jobs', authenticate, requireRole('firma'), async (req, res) => {
   try {
     const { titel, beschreibung, preis } = req.body;
     if (!titel || !titel.trim()) return res.status(400).json({ error: 'Bitte einen Jobtitel eingeben.' });
-    const job = await createJob({
-      firma_id: req.user.id,
-      titel: titel.trim(),
-      beschreibung: beschreibung?.trim() || '',
-      preis: preis === '' || preis == null ? null : Number(preis)
-    });
+    const job = await createJob({ firma_id: req.user.id, titel: titel.trim(), beschreibung: beschreibung?.trim() || '', preis: preis === '' || preis == null ? null : Number(preis) });
     res.json({ success: true, job });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Job konnte nicht erstellt werden' });
-  }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Job konnte nicht erstellt werden' }); }
 });
 
 app.get('/api/jobs/:id', async (req, res) => {
@@ -151,10 +135,7 @@ app.post('/api/jobs/:id/apply', authenticate, requireRole('fahrer'), async (req,
     if (job.status !== 'offen') return res.status(409).json({ error: 'Dieser Job ist nicht mehr offen.' });
     const application = await createApplication({ job_id: job.id, fahrer_id: req.user.id });
     res.json({ success: true, application });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Bewerbung fehlgeschlagen' });
-  }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Bewerbung fehlgeschlagen' }); }
 });
 
 app.get('/api/jobs/:id/applications', authenticate, requireRole('firma'), async (req, res) => {
@@ -178,10 +159,7 @@ app.post('/api/jobs/:id/select-driver', authenticate, requireRole('firma'), asyn
     if (candidate.status !== 'offen') return res.status(409).json({ error: 'Diese Bewerbung ist nicht mehr offen.' });
     const selected = await selectDriverForJob({ job_id: job.id, fahrer_id: fahrerId });
     res.json({ success: true, message: 'Fahrer wurde ausgewählt. Der nächste Schritt ist die Zahlung/Reservierung.', job: { id: job.id, status: 'reserviert' }, application: selected });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Fahrer konnte nicht ausgewählt werden' });
-  }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Fahrer konnte nicht ausgewählt werden' }); }
 });
 
 app.post('/api/jobs/:id/hire', authenticate, requireRole('firma'), async (req, res) => {
@@ -194,10 +172,7 @@ app.post('/api/jobs/:id/hire', authenticate, requireRole('firma'), async (req, r
     if (!application) return res.status(404).json({ error: 'Bewerbung nicht gefunden.' });
     const invoice = await createInvoice({ job_id: job.id, firma_id: job.firma_id, fahrer_id, fahrerlohn, gebuehr });
     res.json({ success: true, invoice });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Einstellung fehlgeschlagen' });
-  }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Einstellung fehlgeschlagen' }); }
 });
 
 app.get('/api/invoices', authenticate, async (req, res) => res.json(await getInvoices()));
@@ -207,7 +182,6 @@ app.get('/api/invoices/:id', authenticate, async (req, res) => {
   res.json(invoice);
 });
 
-// Private driver documents: never expose this directory through express.static.
 app.get('/api/driver/documents', authenticate, requireRole('fahrer'), async (req, res) => {
   res.json(await getDriverDocuments(req.user.id));
 });
@@ -220,19 +194,8 @@ app.post('/api/driver/documents', authenticate, requireRole('fahrer'), (req, res
     const allowedTypes = new Set(['a1', 'personalausweis', 'reisepass', 'fuehrerschein', 'fahrerkarte', 'lkw_modul', 'sonstiges']);
     try {
       if (!allowedTypes.has(document_type)) throw new Error('Ungültiger Dokumenttyp.');
-      const validFile = await validateDocumentFile(req.file);
-      if (!validFile) throw new Error('Die Datei entspricht nicht dem erkannten Dateiformat.');
-      const document = await createDriverDocument({
-        fahrer_id: req.user.id,
-        document_type,
-        original_name: req.file.originalname,
-        stored_name: req.file.filename,
-        mime_type: req.file.mimetype,
-        file_size: req.file.size,
-        issued_at: issued_at || null,
-        expires_at: expires_at || null,
-        auto_status: 'geprueft'
-      });
+      if (!await validateDocumentFile(req.file)) throw new Error('Die Datei entspricht nicht dem erkannten Dateiformat.');
+      const document = await createDriverDocument({ fahrer_id: req.user.id, document_type, original_name: req.file.originalname, stored_name: req.file.filename, mime_type: req.file.mimetype, file_size: req.file.size, issued_at: issued_at || null, expires_at: expires_at || null, auto_status: 'geprueft' });
       res.json({ success: true, message: 'Automatische Dateikontrolle bestanden. Admin-Prüfung ausstehend.', document });
     } catch (error) {
       await fs.unlink(req.file.path).catch(() => {});
@@ -251,9 +214,7 @@ app.get('/api/driver/documents/:id/file', authenticate, async (req, res) => {
     res.type(document.mime_type);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.original_name)}"`);
     res.sendFile(document.stored_name, { root: DOCUMENTS_PATH });
-  } catch {
-    res.status(404).json({ error: 'Datei nicht verfügbar.' });
-  }
+  } catch { res.status(404).json({ error: 'Datei nicht verfügbar.' }); }
 });
 
 app.get('/api/admin/documents', authenticate, requireRole('admin'), async (req, res) => {
@@ -275,7 +236,4 @@ app.get('/api/admin/stats', authenticate, requireRole('admin'), async (req, res)
 initDatabase().then(async () => {
   await fs.mkdir(DOCUMENTS_PATH, { recursive: true });
   app.listen(PORT, () => console.log(`Driverpool24 läuft auf Port ${PORT}`));
-}).catch(err => {
-  console.error('DB init failed', err);
-  process.exit(1);
-});
+}).catch(err => { console.error('DB init failed', err); process.exit(1); });
