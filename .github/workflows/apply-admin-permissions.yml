@@ -1,0 +1,26 @@
+name: Apply DriverPool24 admin permissions
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'patch-admin-permissions.js'
+      - '.github/workflows/apply-admin-permissions.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply patch
+        run: node patch-admin-permissions.js
+      - name: Commit changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add database.js server.js
+          git diff --cached --quiet || git commit -m 'Add server-side admin module permissions'
+          git push
