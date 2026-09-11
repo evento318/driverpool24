@@ -20,6 +20,8 @@ export async function initDatabase() {
     const userColumnNames = new Set(userColumns.map(c => c.name));
     if (!userColumnNames.has('language')) await db.exec("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'de'");
     await db.exec(`
+        CREATE TABLE IF NOT EXISTS admin_module_permissions (area TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+        INSERT OR IGNORE INTO admin_module_permissions (area,enabled) VALUES ('jobs',1),('drivers',1),('companies',1),('sos',1),('billing',1);
         CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (job_id) REFERENCES jobs(id));
         CREATE TABLE IF NOT EXISTS conversation_participants (conversation_id INTEGER NOT NULL,user_id INTEGER NOT NULL,UNIQUE(conversation_id,user_id),FOREIGN KEY (conversation_id) REFERENCES conversations(id),FOREIGN KEY (user_id) REFERENCES users(id));
         CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER NOT NULL,sender_id INTEGER NOT NULL,original_text TEXT NOT NULL,source_language TEXT NOT NULL,target_language TEXT,translated_text TEXT,translation_provider TEXT,translation_status TEXT DEFAULT 'original',created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (conversation_id) REFERENCES conversations(id),FOREIGN KEY (sender_id) REFERENCES users(id));
@@ -39,6 +41,10 @@ export async function initDatabase() {
 
 export const DRIVER_PAY_RATES = Object.freeze({'PKW':0,'Sprinter/Transporter 3.5t':0,'7.5t LKW':200,'40t LKW':230});
 export function getDriverBasePay(vehicle_type) { return DRIVER_PAY_RATES[vehicle_type] ?? null; }
+
+export async function getAdminModulePermissions() { return await db.all("SELECT area,enabled,updated_at FROM admin_module_permissions ORDER BY CASE area WHEN 'jobs' THEN 1 WHEN 'drivers' THEN 2 WHEN 'companies' THEN 3 WHEN 'sos' THEN 4 WHEN 'billing' THEN 5 ELSE 99 END"); }
+export async function isAdminModuleEnabled(area) { const row=await db.get('SELECT enabled FROM admin_module_permissions WHERE area=?',[area]); return row ? Number(row.enabled)===1 : true; }
+export async function setAdminModulePermission(area,enabled) { const allowed=new Set(['jobs','drivers','companies','sos','billing']); if(!allowed.has(area)) throw new Error('Ungültiger Bereich.'); await db.run('INSERT INTO admin_module_permissions(area,enabled,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(area) DO UPDATE SET enabled=excluded.enabled,updated_at=CURRENT_TIMESTAMP',[area,enabled?1:0]); return await db.get('SELECT area,enabled,updated_at FROM admin_module_permissions WHERE area=?',[area]); }
 
 export async function createUser({ name, email, password, role }) { const result = await db.run('INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)',[name,email,password,role]); return {id:result.lastID,name,email,role}; }
 export async function getUserLanguage(user_id) { const row=await db.get('SELECT COALESCE(language,\'de\') AS language FROM users WHERE id=?',[user_id]); return row?.language||'de'; }
