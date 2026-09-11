@@ -4,123 +4,18 @@ import { open } from 'sqlite';
 let db;
 
 export async function initDatabase() {
-    db = await open({
-        filename: process.env.DATABASE_PATH || './driverpool24.db',
-        driver: sqlite3.Database
-    });
-
+    db = await open({ filename: process.env.DATABASE_PATH || './driverpool24.db', driver: sqlite3.Database });
     await db.exec(`
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('fahrer','firma','admin')),
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            firma_id INTEGER NOT NULL,
-            titel TEXT NOT NULL,
-            beschreibung TEXT,
-            preis REAL,
-            status TEXT DEFAULT 'offen',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (firma_id) REFERENCES users(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS applications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id INTEGER NOT NULL,
-            fahrer_id INTEGER NOT NULL,
-            status TEXT DEFAULT 'offen',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (job_id) REFERENCES jobs(id),
-            FOREIGN KEY (fahrer_id) REFERENCES users(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS invoices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id INTEGER NOT NULL,
-            firma_id INTEGER NOT NULL,
-            fahrer_id INTEGER NOT NULL,
-            fahrerlohn REAL NOT NULL,
-            gebuehr REAL NOT NULL,
-            gesamt REAL NOT NULL,
-            zahlungsstatus TEXT DEFAULT 'ausstehend',
-            auszahlungsstatus TEXT DEFAULT 'gesichert',
-            bezahlt_am DATETIME,
-            auszahlung_freigegeben_am DATETIME,
-            ausgezahlt_am DATETIME,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (job_id) REFERENCES jobs(id),
-            FOREIGN KEY (firma_id) REFERENCES users(id),
-            FOREIGN KEY (fahrer_id) REFERENCES users(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS driver_documents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fahrer_id INTEGER NOT NULL,
-            document_type TEXT NOT NULL,
-            original_name TEXT NOT NULL,
-            stored_name TEXT NOT NULL UNIQUE,
-            mime_type TEXT NOT NULL,
-            file_size INTEGER NOT NULL,
-            issued_at DATETIME,
-            expires_at DATETIME,
-            auto_status TEXT NOT NULL DEFAULT 'geprueft',
-            verification_status TEXT NOT NULL DEFAULT 'ausstehend',
-            verification_note TEXT,
-            verified_at DATETIME,
-            verified_by INTEGER,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (fahrer_id) REFERENCES users(id),
-            FOREIGN KEY (verified_by) REFERENCES users(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS driver_qualifications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fahrer_id INTEGER NOT NULL,
-            qualification_type TEXT NOT NULL,
-            module_number INTEGER,
-            completed_at DATETIME,
-            expires_at DATETIME,
-            provider TEXT,
-            document_id INTEGER,
-            status TEXT NOT NULL DEFAULT 'ausstehend',
-            FOREIGN KEY (fahrer_id) REFERENCES users(id),
-            FOREIGN KEY (document_id) REFERENCES driver_documents(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS sos_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id INTEGER NOT NULL,
-            firma_id INTEGER NOT NULL,
-            company_price_per_day REAL NOT NULL DEFAULT 500,
-            driver_bonus REAL NOT NULL DEFAULT 50,
-            status TEXT NOT NULL DEFAULT 'offen',
-            selected_fahrer_id INTEGER,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            closed_at DATETIME,
-            FOREIGN KEY (job_id) REFERENCES jobs(id),
-            FOREIGN KEY (firma_id) REFERENCES users(id),
-            FOREIGN KEY (selected_fahrer_id) REFERENCES users(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS sos_optins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sos_request_id INTEGER NOT NULL,
-            fahrer_id INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'interessiert',
-            driver_payout_per_day REAL NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(sos_request_id, fahrer_id),
-            FOREIGN KEY (sos_request_id) REFERENCES sos_requests(id),
-            FOREIGN KEY (fahrer_id) REFERENCES users(id)
-        );
+        CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('fahrer','firma','admin')),created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY AUTOINCREMENT,firma_id INTEGER NOT NULL,titel TEXT NOT NULL,beschreibung TEXT,preis REAL,status TEXT DEFAULT 'offen',created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (firma_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS applications (id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL,fahrer_id INTEGER NOT NULL,status TEXT DEFAULT 'offen',created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (job_id) REFERENCES jobs(id),FOREIGN KEY (fahrer_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL,firma_id INTEGER NOT NULL,fahrer_id INTEGER NOT NULL,fahrerlohn REAL NOT NULL,gebuehr REAL NOT NULL,gesamt REAL NOT NULL,zahlungsstatus TEXT DEFAULT 'ausstehend',auszahlungsstatus TEXT DEFAULT 'gesichert',bezahlt_am DATETIME,auszahlung_freigegeben_am DATETIME,ausgezahlt_am DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (job_id) REFERENCES jobs(id),FOREIGN KEY (firma_id) REFERENCES users(id),FOREIGN KEY (fahrer_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS driver_documents (id INTEGER PRIMARY KEY AUTOINCREMENT,fahrer_id INTEGER NOT NULL,document_type TEXT NOT NULL,original_name TEXT NOT NULL,stored_name TEXT NOT NULL UNIQUE,mime_type TEXT NOT NULL,file_size INTEGER NOT NULL,issued_at DATETIME,expires_at DATETIME,auto_status TEXT NOT NULL DEFAULT 'geprueft',verification_status TEXT NOT NULL DEFAULT 'ausstehend',verification_note TEXT,verified_at DATETIME,verified_by INTEGER,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (fahrer_id) REFERENCES users(id),FOREIGN KEY (verified_by) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS driver_qualifications (id INTEGER PRIMARY KEY AUTOINCREMENT,fahrer_id INTEGER NOT NULL,qualification_type TEXT NOT NULL,module_number INTEGER,completed_at DATETIME,expires_at DATETIME,provider TEXT,document_id INTEGER,status TEXT NOT NULL DEFAULT 'ausstehend',FOREIGN KEY (fahrer_id) REFERENCES users(id),FOREIGN KEY (document_id) REFERENCES driver_documents(id));
+        CREATE TABLE IF NOT EXISTS driver_ratings (id INTEGER PRIMARY KEY AUTOINCREMENT,fahrer_id INTEGER NOT NULL,firma_id INTEGER,job_id INTEGER,stars INTEGER NOT NULL CHECK(stars >= 1 AND stars <= 5),comment TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(fahrer_id,firma_id,job_id),FOREIGN KEY (fahrer_id) REFERENCES users(id),FOREIGN KEY (firma_id) REFERENCES users(id),FOREIGN KEY (job_id) REFERENCES jobs(id));
+        CREATE TABLE IF NOT EXISTS sos_requests (id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL,firma_id INTEGER NOT NULL,company_price_per_day REAL NOT NULL DEFAULT 500,driver_bonus REAL NOT NULL DEFAULT 50,status TEXT NOT NULL DEFAULT 'offen',selected_fahrer_id INTEGER,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,closed_at DATETIME,FOREIGN KEY (job_id) REFERENCES jobs(id),FOREIGN KEY (firma_id) REFERENCES users(id),FOREIGN KEY (selected_fahrer_id) REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS sos_optins (id INTEGER PRIMARY KEY AUTOINCREMENT,sos_request_id INTEGER NOT NULL,fahrer_id INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'interessiert',driver_payout_per_day REAL NOT NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(sos_request_id,fahrer_id),FOREIGN KEY (sos_request_id) REFERENCES sos_requests(id),FOREIGN KEY (fahrer_id) REFERENCES users(id));
     `);
-
     const invoiceColumns = await db.all('PRAGMA table_info(invoices)');
     const columnNames = new Set(invoiceColumns.map(c => c.name));
     if (!columnNames.has('zahlungsstatus')) await db.exec("ALTER TABLE invoices ADD COLUMN zahlungsstatus TEXT DEFAULT 'ausstehend'");
@@ -128,147 +23,49 @@ export async function initDatabase() {
     if (!columnNames.has('bezahlt_am')) await db.exec('ALTER TABLE invoices ADD COLUMN bezahlt_am DATETIME');
     if (!columnNames.has('auszahlung_freigegeben_am')) await db.exec('ALTER TABLE invoices ADD COLUMN auszahlung_freigegeben_am DATETIME');
     if (!columnNames.has('ausgezahlt_am')) await db.exec('ALTER TABLE invoices ADD COLUMN ausgezahlt_am DATETIME');
-
     console.log('✅ Datenbank initialisiert');
 }
 
-export async function createUser({ name, email, password, role }) {
-    const result = await db.run(
-        'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-        [name, email, password, role]
-    );
-    return { id: result.lastID, name, email, role };
-}
-
-export async function getUserByEmail(email) { return await db.get('SELECT * FROM users WHERE email = ?', [email]); }
-export async function getUserById(id) { return await db.get('SELECT id,name,email,role,created_at FROM users WHERE id = ?', [id]); }
-
-export async function createJob({ firma_id, titel, beschreibung, preis }) {
-    const result = await db.run('INSERT INTO jobs (firma_id, titel, beschreibung, preis) VALUES (?, ?, ?, ?)', [firma_id, titel, beschreibung, preis]);
-    return { id: result.lastID, firma_id, titel, beschreibung, preis, status: 'offen' };
-}
+export async function createUser({ name, email, password, role }) { const result = await db.run('INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)',[name,email,password,role]); return {id:result.lastID,name,email,role}; }
+export async function getUserByEmail(email) { return await db.get('SELECT * FROM users WHERE email = ?',[email]); }
+export async function getUserById(id) { return await db.get('SELECT id,name,email,role,created_at FROM users WHERE id = ?',[id]); }
+export async function createJob({firma_id,titel,beschreibung,preis}) { const result=await db.run('INSERT INTO jobs (firma_id,titel,beschreibung,preis) VALUES (?,?,?,?)',[firma_id,titel,beschreibung,preis]); return {id:result.lastID,firma_id,titel,beschreibung,preis,status:'offen'}; }
 export async function getJobs() { return await db.all('SELECT * FROM jobs ORDER BY created_at DESC'); }
-export async function getJobById(id) { return await db.get('SELECT * FROM jobs WHERE id = ?', [id]); }
-export async function updateJobStatus(id, status) { return await db.run('UPDATE jobs SET status = ? WHERE id = ?', [status, id]); }
-
-export async function createApplication({ job_id, fahrer_id }) {
-    const existing = await db.get('SELECT * FROM applications WHERE job_id = ? AND fahrer_id = ?', [job_id, fahrer_id]);
-    if (existing) return existing;
-    const result = await db.run('INSERT INTO applications (job_id, fahrer_id) VALUES (?, ?)', [job_id, fahrer_id]);
-    return { id: result.lastID, job_id, fahrer_id, status: 'offen' };
-}
-export async function getApplicationsByJobId(job_id) {
-    return await db.all(`SELECT a.*, u.name AS fahrer_name, u.email AS fahrer_email FROM applications a JOIN users u ON a.fahrer_id = u.id WHERE a.job_id = ? ORDER BY a.created_at ASC`, [job_id]);
-}
-export async function getApplicationByJobAndEmail(job_id, email) {
-    return await db.get(`SELECT a.* FROM applications a JOIN users u ON a.fahrer_id = u.id WHERE a.job_id = ? AND u.email = ?`, [job_id, email]);
-}
-export async function getApplicationById(id) { return await db.get('SELECT * FROM applications WHERE id = ?', [id]); }
-export async function updateApplicationStatus(id, status) { return await db.run('UPDATE applications SET status = ? WHERE id = ?', [status, id]); }
-
-export async function selectDriverForJob({ job_id, fahrer_id }) {
-    const application = await db.get('SELECT * FROM applications WHERE job_id = ? AND fahrer_id = ?', [job_id, fahrer_id]);
-    if (!application) return null;
-    await db.run('BEGIN TRANSACTION');
-    try {
-        await db.run(`UPDATE applications SET status = CASE WHEN fahrer_id = ? THEN 'angenommen' ELSE 'abgelehnt' END WHERE job_id = ?`, [fahrer_id, job_id]);
-        await db.run('UPDATE jobs SET status = ? WHERE id = ?', ['reserviert', job_id]);
-        await db.run('COMMIT');
-    } catch (err) { await db.run('ROLLBACK'); throw err; }
-    return await db.get(`SELECT a.*, u.name AS fahrer_name, u.email AS fahrer_email FROM applications a JOIN users u ON a.fahrer_id = u.id WHERE a.job_id = ? AND a.fahrer_id = ?`, [job_id, fahrer_id]);
-}
-
-export async function createInvoice({ job_id, firma_id, fahrer_id, fahrerlohn, gebuehr }) {
-    const gesamt = fahrerlohn + gebuehr;
-    const result = await db.run(`INSERT INTO invoices (job_id, firma_id, fahrer_id, fahrerlohn, gebuehr, gesamt) VALUES (?, ?, ?, ?, ?, ?)`, [job_id, firma_id, fahrer_id, fahrerlohn, gebuehr, gesamt]);
-    return { id: result.lastID, job_id, firma_id, fahrer_id, fahrerlohn, gebuehr, gesamt, zahlungsstatus: 'ausstehend', auszahlungsstatus: 'gesichert' };
-}
-export async function getInvoiceByJobId(job_id) { return await db.get('SELECT * FROM invoices WHERE job_id = ? ORDER BY id DESC LIMIT 1', [job_id]); }
-export async function markInvoicePaid(id) { return await db.run(`UPDATE invoices SET zahlungsstatus = 'bezahlt', bezahlt_am = CURRENT_TIMESTAMP WHERE id = ?`, [id]); }
-export async function releaseDriverPayment(id) { return await db.run(`UPDATE invoices SET auszahlungsstatus = 'auszahlung_freigegeben', auszahlung_freigegeben_am = CURRENT_TIMESTAMP WHERE id = ? AND zahlungsstatus = 'bezahlt'`, [id]); }
-export async function markDriverPaid(id) { return await db.run(`UPDATE invoices SET auszahlungsstatus = 'ausgezahlt', ausgezahlt_am = CURRENT_TIMESTAMP WHERE id = ? AND auszahlungsstatus = 'auszahlung_freigegeben'`, [id]); }
+export async function getJobById(id) { return await db.get('SELECT * FROM jobs WHERE id = ?',[id]); }
+export async function updateJobStatus(id,status) { return await db.run('UPDATE jobs SET status = ? WHERE id = ?',[status,id]); }
+export async function createApplication({job_id,fahrer_id}) { const existing=await db.get('SELECT * FROM applications WHERE job_id=? AND fahrer_id=?',[job_id,fahrer_id]); if(existing)return existing; const result=await db.run('INSERT INTO applications (job_id,fahrer_id) VALUES (?,?)',[job_id,fahrer_id]); return {id:result.lastID,job_id,fahrer_id,status:'offen'}; }
+export async function getApplicationsByJobId(job_id) { return await db.all('SELECT a.*,u.name AS fahrer_name,u.email AS fahrer_email FROM applications a JOIN users u ON a.fahrer_id=u.id WHERE a.job_id=? ORDER BY a.created_at ASC',[job_id]); }
+export async function getApplicationByJobAndEmail(job_id,email) { return await db.get('SELECT a.* FROM applications a JOIN users u ON a.fahrer_id=u.id WHERE a.job_id=? AND u.email=?',[job_id,email]); }
+export async function getApplicationById(id) { return await db.get('SELECT * FROM applications WHERE id = ?',[id]); }
+export async function updateApplicationStatus(id,status) { return await db.run('UPDATE applications SET status=? WHERE id=?',[status,id]); }
+export async function selectDriverForJob({job_id,fahrer_id}) { const application=await db.get('SELECT * FROM applications WHERE job_id=? AND fahrer_id=?',[job_id,fahrer_id]); if(!application)return null; await db.run('BEGIN TRANSACTION'); try { await db.run("UPDATE applications SET status=CASE WHEN fahrer_id=? THEN 'angenommen' ELSE 'abgelehnt' END WHERE job_id=?",[fahrer_id,job_id]); await db.run("UPDATE jobs SET status='reserviert' WHERE id=?",[job_id]); await db.run('COMMIT'); } catch(err){await db.run('ROLLBACK');throw err;} return await db.get('SELECT a.*,u.name AS fahrer_name,u.email AS fahrer_email FROM applications a JOIN users u ON a.fahrer_id=u.id WHERE a.job_id=? AND a.fahrer_id=?',[job_id,fahrer_id]); }
+export async function createInvoice({job_id,firma_id,fahrer_id,fahrerlohn,gebuehr}) { const gesamt=fahrerlohn+gebuehr; const result=await db.run('INSERT INTO invoices (job_id,firma_id,fahrer_id,fahrerlohn,gebuehr,gesamt) VALUES (?,?,?,?,?,?)',[job_id,firma_id,fahrer_id,fahrerlohn,gebuehr,gesamt]); return {id:result.lastID,job_id,firma_id,fahrer_id,fahrerlohn,gebuehr,gesamt,zahlungsstatus:'ausstehend',auszahlungsstatus:'gesichert'}; }
+export async function getInvoiceByJobId(job_id) { return await db.get('SELECT * FROM invoices WHERE job_id=? ORDER BY id DESC LIMIT 1',[job_id]); }
+export async function markInvoicePaid(id) { return await db.run("UPDATE invoices SET zahlungsstatus='bezahlt',bezahlt_am=CURRENT_TIMESTAMP WHERE id=?",[id]); }
+export async function releaseDriverPayment(id) { return await db.run("UPDATE invoices SET auszahlungsstatus='auszahlung_freigegeben',auszahlung_freigegeben_am=CURRENT_TIMESTAMP WHERE id=? AND zahlungsstatus='bezahlt'",[id]); }
+export async function markDriverPaid(id) { return await db.run("UPDATE invoices SET auszahlungsstatus='ausgezahlt',ausgezahlt_am=CURRENT_TIMESTAMP WHERE id=? AND auszahlungsstatus='auszahlung_freigegeben'",[id]); }
 export async function getInvoices() { return await db.all('SELECT * FROM invoices ORDER BY created_at DESC'); }
-export async function getInvoiceById(id) { return await db.get('SELECT * FROM invoices WHERE id = ?', [id]); }
+export async function getInvoiceById(id) { return await db.get('SELECT * FROM invoices WHERE id=?',[id]); }
+export async function createDriverDocument(data) { const result=await db.run('INSERT INTO driver_documents (fahrer_id,document_type,original_name,stored_name,mime_type,file_size,issued_at,expires_at,auto_status,verification_status) VALUES (?,?,?,?,?,?,?,?,?,?)',[data.fahrer_id,data.document_type,data.original_name,data.stored_name,data.mime_type,data.file_size,data.issued_at||null,data.expires_at||null,data.auto_status||'geprueft','ausstehend']); return await db.get('SELECT * FROM driver_documents WHERE id=?',[result.lastID]); }
+export async function getDriverDocuments(fahrer_id) { return await db.all('SELECT id,fahrer_id,document_type,original_name,mime_type,file_size,issued_at,expires_at,auto_status,verification_status,verification_note,verified_at,created_at FROM driver_documents WHERE fahrer_id=? ORDER BY created_at DESC',[fahrer_id]); }
+export async function getDriverDocumentById(id) { return await db.get('SELECT * FROM driver_documents WHERE id=?',[id]); }
+export async function verifyDriverDocument(id,admin_id,status,note='') { return await db.run('UPDATE driver_documents SET verification_status=?,verification_note=?,verified_at=CURRENT_TIMESTAMP,verified_by=? WHERE id=?',[status,note,admin_id,id]); }
 
-export async function createDriverDocument(data) {
-    const result = await db.run(`INSERT INTO driver_documents (fahrer_id, document_type, original_name, stored_name, mime_type, file_size, issued_at, expires_at, auto_status, verification_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [data.fahrer_id, data.document_type, data.original_name, data.stored_name, data.mime_type, data.file_size, data.issued_at || null, data.expires_at || null, data.auto_status || 'geprueft', 'ausstehend']);
-    return await db.get('SELECT * FROM driver_documents WHERE id = ?', [result.lastID]);
+export async function addDriverRating({fahrer_id,firma_id=null,job_id=null,stars,comment=''}) {
+    const value=Number(stars);
+    if(!Number.isInteger(value)||value<1||value>5) throw new Error('Sterne müssen zwischen 1 und 5 liegen.');
+    const existing=await db.get('SELECT id FROM driver_ratings WHERE fahrer_id=? AND firma_id IS ? AND job_id IS ?',[fahrer_id,firma_id,job_id]);
+    if(existing) throw new Error('Dieser Fahrer wurde für diesen Einsatz bereits bewertet.');
+    await db.run('INSERT INTO driver_ratings (fahrer_id,firma_id,job_id,stars,comment) VALUES (?,?,?,?,?)',[fahrer_id,firma_id,job_id,value,String(comment).slice(0,1000)]);
+    return await getDriverRatingSummary(fahrer_id);
 }
-export async function getDriverDocuments(fahrer_id) { return await db.all('SELECT id,fahrer_id,document_type,original_name,mime_type,file_size,issued_at,expires_at,auto_status,verification_status,verification_note,verified_at,created_at FROM driver_documents WHERE fahrer_id = ? ORDER BY created_at DESC', [fahrer_id]); }
-export async function getDriverDocumentById(id) { return await db.get('SELECT * FROM driver_documents WHERE id = ?', [id]); }
-export async function verifyDriverDocument(id, admin_id, status, note = '') { return await db.run(`UPDATE driver_documents SET verification_status = ?, verification_note = ?, verified_at = CURRENT_TIMESTAMP, verified_by = ? WHERE id = ?`, [status, note, admin_id, id]); }
+export async function getDriverRatingSummary(fahrer_id) { const row=await db.get('SELECT ROUND(AVG(stars),1) AS average,COUNT(*) AS count FROM driver_ratings WHERE fahrer_id=?',[fahrer_id]); return {stars:row?.average?Number(row.average):0,rating_count:Number(row?.count||0)}; }
 
-export async function createSosRequest({ job_id, firma_id, company_price_per_day = 500, driver_bonus = 50 }) {
-    const existing = await db.get(`SELECT * FROM sos_requests WHERE job_id = ? AND status = 'offen'`, [job_id]);
-    if (existing) return existing;
-    const result = await db.run(`INSERT INTO sos_requests (job_id, firma_id, company_price_per_day, driver_bonus) VALUES (?, ?, ?, ?)`, [job_id, firma_id, company_price_per_day, driver_bonus]);
-    return await db.get('SELECT * FROM sos_requests WHERE id = ?', [result.lastID]);
-}
-
-export async function getOpenSosRequestsForDrivers() {
-    return await db.all(`SELECT s.id, s.job_id, j.titel, j.beschreibung, s.driver_bonus, s.status, s.created_at FROM sos_requests s JOIN jobs j ON j.id = s.job_id WHERE s.status = 'offen' ORDER BY s.created_at DESC`);
-}
-
-export async function createSosOptin({ sos_request_id, fahrer_id, driver_payout_per_day }) {
-    const existing = await db.get('SELECT * FROM sos_optins WHERE sos_request_id = ? AND fahrer_id = ?', [sos_request_id, fahrer_id]);
-    if (existing) return existing;
-    const result = await db.run(`INSERT INTO sos_optins (sos_request_id, fahrer_id, driver_payout_per_day) VALUES (?, ?, ?)`, [sos_request_id, fahrer_id, driver_payout_per_day]);
-    return await db.get('SELECT id,sos_request_id,fahrer_id,status,driver_payout_per_day,created_at FROM sos_optins WHERE id = ?', [result.lastID]);
-}
-
-export async function getSosOptinsForCompany(sos_request_id) {
-    return await db.all(`SELECT o.id,o.sos_request_id,o.fahrer_id,o.status,o.driver_payout_per_day,o.created_at,u.name AS fahrer_name FROM sos_optins o JOIN users u ON u.id = o.fahrer_id WHERE o.sos_request_id = ? ORDER BY o.created_at ASC`, [sos_request_id]);
-}
-
-export async function getSosRequestForUser(id) { return await db.get('SELECT * FROM sos_requests WHERE id = ?', [id]); }
-
-export async function getDriverSosQualification(fahrer_id) {
-    const required = await db.all(`
-        SELECT document_type, expires_at, verification_status
-        FROM driver_documents
-        WHERE fahrer_id = ?
-          AND document_type IN ('fuehrerschein','fahrerkarte')
-          AND verification_status = 'geprueft'
-          AND (expires_at IS NULL OR date(expires_at) >= date('now'))
-    `, [fahrer_id]);
-    const hasLicense = required.some(d => d.document_type === 'fuehrerschein');
-    const hasDriverCard = required.some(d => d.document_type === 'fahrerkarte');
-    const qualification = await db.get(`
-        SELECT COUNT(*) AS c
-        FROM driver_qualifications q
-        WHERE q.fahrer_id = ?
-          AND q.status = 'geprueft'
-          AND (q.expires_at IS NULL OR date(q.expires_at) >= date('now'))
-    `, [fahrer_id]);
-    const hasQualification = Number(qualification.c) > 0;
-    return {
-        qualified: hasLicense && hasDriverCard,
-        hasLicense,
-        hasDriverCard,
-        hasQualification
-    };
-}
-
-export async function selectSosDriver({ sos_request_id, fahrer_id }) {
-    const request = await db.get(`SELECT * FROM sos_requests WHERE id = ? AND status = 'offen'`, [sos_request_id]);
-    if (!request) return null;
-    const optin = await db.get(`SELECT * FROM sos_optins WHERE sos_request_id = ? AND fahrer_id = ? AND status = 'interessiert'`, [sos_request_id, fahrer_id]);
-    if (!optin) return null;
-    await db.run('BEGIN TRANSACTION');
-    try {
-        await db.run(`UPDATE sos_optins SET status = CASE WHEN fahrer_id = ? THEN 'ausgewaehlt' ELSE 'nicht_ausgewaehlt' END WHERE sos_request_id = ?`, [fahrer_id, sos_request_id]);
-        await db.run(`UPDATE sos_requests SET status = 'reserviert', selected_fahrer_id = ? WHERE id = ?`, [fahrer_id, sos_request_id]);
-        await db.run('COMMIT');
-    } catch (err) { await db.run('ROLLBACK'); throw err; }
-    return await db.get(`SELECT o.id,o.sos_request_id,o.fahrer_id,o.status,o.driver_payout_per_day,o.created_at,u.name AS fahrer_name FROM sos_optins o JOIN users u ON u.id = o.fahrer_id WHERE o.sos_request_id = ? AND o.fahrer_id = ?`, [sos_request_id, fahrer_id]);
-}
-
-export async function getAdminStats() {
-    const users = await db.get('SELECT COUNT(*) AS c FROM users');
-    const jobs = await db.get('SELECT COUNT(*) AS c FROM jobs');
-    const invoices = await db.get('SELECT COUNT(*) AS c FROM invoices');
-    const umsatz = await db.get('SELECT SUM(gebuehr) AS sum FROM invoices');
-    const documents = await db.get("SELECT COUNT(*) AS c FROM driver_documents WHERE verification_status = 'ausstehend'");
-    const sos = await db.get("SELECT COUNT(*) AS c FROM sos_requests WHERE status = 'offen'");
-    return { userCount: users.c, jobCount: jobs.c, invoiceCount: invoices.c, umsatz: umsatz.sum || 0, pendingDocuments: documents.c, openSosRequests: sos.c };
-}
+export async function createSosRequest({job_id,firma_id,company_price_per_day=500,driver_bonus=50}) { const existing=await db.get("SELECT * FROM sos_requests WHERE job_id=? AND status='offen'",[job_id]); if(existing)return existing; const result=await db.run('INSERT INTO sos_requests (job_id,firma_id,company_price_per_day,driver_bonus) VALUES (?,?,?,?)',[job_id,firma_id,company_price_per_day,driver_bonus]); return await db.get('SELECT * FROM sos_requests WHERE id=?',[result.lastID]); }
+export async function getOpenSosRequestsForDrivers() { return await db.all("SELECT s.id,s.job_id,j.titel,j.beschreibung,s.driver_bonus,s.status,s.created_at FROM sos_requests s JOIN jobs j ON j.id=s.job_id WHERE s.status='offen' ORDER BY s.created_at DESC"); }
+export async function createSosOptin({sos_request_id,fahrer_id,driver_payout_per_day}) { const existing=await db.get('SELECT * FROM sos_optins WHERE sos_request_id=? AND fahrer_id=?',[sos_request_id,fahrer_id]); if(existing)return existing; const result=await db.run('INSERT INTO sos_optins (sos_request_id,fahrer_id,driver_payout_per_day) VALUES (?,?,?)',[sos_request_id,fahrer_id,driver_payout_per_day]); return await db.get('SELECT id,sos_request_id,fahrer_id,status,driver_payout_per_day,created_at FROM sos_optins WHERE id=?',[result.lastID]); }
+export async function getSosOptinsForCompany(sos_request_id) { return await db.all(`SELECT o.id,o.sos_request_id,o.fahrer_id,o.status,o.driver_payout_per_day,o.created_at,u.name AS fahrer_name,COALESCE(ROUND(AVG(r.stars),1),0) AS rating_stars,COUNT(r.id) AS rating_count FROM sos_optins o JOIN users u ON u.id=o.fahrer_id LEFT JOIN driver_ratings r ON r.fahrer_id=o.fahrer_id WHERE o.sos_request_id=? GROUP BY o.id,o.sos_request_id,o.fahrer_id,o.status,o.driver_payout_per_day,o.created_at,u.name ORDER BY CASE WHEN o.status='interessiert' THEN 0 ELSE 1 END ASC,CASE WHEN COUNT(r.id)>0 THEN 0 ELSE 1 END ASC,COALESCE(AVG(r.stars),0) DESC,COUNT(r.id) DESC,o.created_at ASC`,[sos_request_id]); }
+export async function getSosRequestForUser(id) { return await db.get('SELECT * FROM sos_requests WHERE id=?',[id]); }
+export async function getDriverSosQualification(fahrer_id) { const required=await db.all("SELECT document_type,expires_at,verification_status FROM driver_documents WHERE fahrer_id=? AND document_type IN ('fuehrerschein','fahrerkarte') AND verification_status='geprueft' AND (expires_at IS NULL OR date(expires_at)>=date('now'))",[fahrer_id]); const hasLicense=required.some(d=>d.document_type==='fuehrerschein'); const hasDriverCard=required.some(d=>d.document_type==='fahrerkarte'); const qualification=await db.get("SELECT COUNT(*) AS c FROM driver_qualifications q WHERE q.fahrer_id=? AND q.status='geprueft' AND (q.expires_at IS NULL OR date(q.expires_at)>=date('now'))",[fahrer_id]); const hasQualification=Number(qualification.c)>0; return {qualified:hasLicense&&hasDriverCard,hasLicense,hasDriverCard,hasQualification}; }
+export async function selectSosDriver({sos_request_id,fahrer_id}) { const request=await db.get("SELECT * FROM sos_requests WHERE id=? AND status='offen'",[sos_request_id]); if(!request)return null; const optin=await db.get("SELECT * FROM sos_optins WHERE sos_request_id=? AND fahrer_id=? AND status='interessiert'",[sos_request_id,fahrer_id]); if(!optin)return null; await db.run('BEGIN TRANSACTION'); try { await db.run("UPDATE sos_optins SET status=CASE WHEN fahrer_id=? THEN 'ausgewaehlt' ELSE 'nicht_ausgewaehlt' END WHERE sos_request_id=?",[fahrer_id,sos_request_id]); await db.run("UPDATE sos_requests SET status='reserviert',selected_fahrer_id=? WHERE id=?",[fahrer_id,sos_request_id]); await db.run('COMMIT'); } catch(err){await db.run('ROLLBACK');throw err;} return await db.get('SELECT o.id,o.sos_request_id,o.fahrer_id,o.status,o.driver_payout_per_day,o.created_at,u.name AS fahrer_name FROM sos_optins o JOIN users u ON u.id=o.fahrer_id WHERE o.sos_request_id=? AND o.fahrer_id=?',[sos_request_id,fahrer_id]); }
+export async function getAdminStats() { const users=await db.get('SELECT COUNT(*) AS c FROM users'); const jobs=await db.get('SELECT COUNT(*) AS c FROM jobs'); const invoices=await db.get('SELECT COUNT(*) AS c FROM invoices'); const umsatz=await db.get('SELECT SUM(gebuehr) AS sum FROM invoices'); const documents=await db.get("SELECT COUNT(*) AS c FROM driver_documents WHERE verification_status='ausstehend'"); const sos=await db.get("SELECT COUNT(*) AS c FROM sos_requests WHERE status='offen'"); return {userCount:users.c,jobCount:jobs.c,invoiceCount:invoices.c,umsatz:umsatz.sum||0,pendingDocuments:documents.c,openSosRequests:sos.c}; }
